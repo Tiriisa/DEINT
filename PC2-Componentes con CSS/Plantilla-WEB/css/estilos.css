@@ -1,0 +1,46 @@
+/* Estilos generales *//*Escribe aquí tu CSS - Fdo LuisGG*/
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playwrite+BE+WAL+Guides&display=swap');
+body {
+    color: rgb(0, 0, 167);
+    font-family: 'Inter', sans-serif;
+    }
+
+header{
+    background-color: rgb(115, 163, 165);
+    height: 133px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 20px;
+}
+
+h1,h2,h3,h4,h5,h6{
+    
+}
+
+#burger{
+    background-color: transparent; border: 0;
+    position: absolute; top: 20px; left: 20px;
+}
+
+#titulo-principal{
+    position: absolute; top: 25px; left: 60px;
+    color: black;
+}
+
+#galeria{
+    background-color: rgb(181, 238, 219);
+    padding:0 20px;
+    display: flex; flex-wrap: wrap; 
+    gap: 20px;  
+}
+
+#galeria section{
+    flex: 1 0 calc(50% - 20px);
+}
+
+#galeria img{
+    width: 100%;    
+}
+
+
