@@ -1,0 +1,39 @@
+doctype html
+html(lang="es")
+  head
+    meta(charset="utf-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1")
+    title Gatos
+    link(rel="stylesheet" href="/css/reset.css")
+    link(rel="stylesheet" href="/css/estilos.css")
+  body
+    header.cabecera
+      h1 Gatos - Art Institute of Chicago
+      p #{totalObras} obras
+
+    section#cajon
+      each obra in obras
+        figure
+          a(href="/obra/" + obra.id)
+            if obra.image_id
+              img(src="/imagen/" + obra.image_id, alt=obra.title)
+            else
+              .sin-imagen Sin imagen
+            figcaption
+              span.titulo= obra.title
+              if obra.artist_title
+                span.autor= obra.artist_title
+
+    nav.paginacion
+      if paginaActual > 1
+        a.boton(href="/?page=" + (paginaActual - 1)) ‹ Anterior
+      else
+        span.boton.inactivo ‹ Anterior
+      span.pagina Página #{paginaActual} de #{totalPaginas}
+      if paginaActual < totalPaginas
+        a.boton(href="/?page=" + (paginaActual + 1)) Siguiente ›
+      else
+        span.boton.inactivo Siguiente ›
+
+    script(src="/js/masonry.pkgd.min.js")
+    script(src="/js/code.js")

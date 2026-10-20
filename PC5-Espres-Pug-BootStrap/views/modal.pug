@@ -1,0 +1,14 @@
+extends layout
+
+block contenido 
+    p=mensaje
+    div.modal(tabindex="-1")
+        div.modal-dialog
+            div.modal-content
+                div.modal-header
+                    h5.modal-title Modal title
+                div.modal-body
+                    p Modal body text goes here.
+                div.modal-footer
+                    button.btn.btn-secondary(type="button" data-bs-dismiss="modal") Close
+                    button.btn.btn-primary(type="button") Save changes

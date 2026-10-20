@@ -1,12 +1,4 @@
-doctype html
-html(lang='es')
-    head
-        title= titulo
-        link(href='css/bootstrap.min.css' rel='stylesheet')
-        link(href='css/estilos.css' rel='stylesheet')
+extends layout
 
-    body
-        h1= mensaje
-        p Esto es el contenido de un párrafo
-        script(src='js/bootstrap.bundle.min.js')
-        script(src='js/script.js')
+block contenido 
+    p=mensaje

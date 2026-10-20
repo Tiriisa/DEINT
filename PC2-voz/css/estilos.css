@@ -1,0 +1,41 @@
+:root{
+    --color-principal:#666;
+    --medida-base:18px;
+}
+
+html, body{
+    height: 100%;
+}
+
+body{
+    color:var(--color-principal);
+}
+
+header{
+    height: 110px;
+    display: flex; flex-direction: column; justify-content: space-around;
+}
+
+main{
+    height: calc(100% - 110px);
+}
+
+header h1{
+    text-align: center;
+    font-size: 4rem;
+}
+
+output#texto{
+    display: block;
+    background-color: rgb(131, 238, 117);
+    height:calc(100% - 160px);
+}
+
+button#btn-copiar{
+
+}
+
+button#btn-escuchar{
+    height: 100px;
+    margin: 0 30px;
+}

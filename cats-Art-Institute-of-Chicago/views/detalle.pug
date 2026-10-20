@@ -1,0 +1,39 @@
+doctype html
+html(lang="es")
+  head
+    meta(charset="utf-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1")
+    title= obra.title
+    link(rel="stylesheet" href="/css/reset.css")
+    link(rel="stylesheet" href="/css/estilos.css")
+  body
+    header.cabecera
+      h1= obra.title
+
+    main.ficha
+      if obra.image_id
+        img(src="/imagen/" + obra.image_id, alt=obra.title)
+      else
+        p Sin imagen disponible
+
+      -
+        const datos = [
+          ['Artista', obra.artist_display],
+          ['Fecha', obra.date_display],
+          ['Lugar de origen', obra.place_of_origin],
+          ['Estilo', obra.style_title],
+          ['Técnica', obra.medium_display],
+          ['Dimensiones', obra.dimensions],
+          ['Procedencia', obra.credit_line]
+        ];
+
+      dl
+        each dato in datos
+          //- Solo se muestran los datos que la obra tiene
+          if dato[1]
+            div
+              dt= dato[0]
+              dd= dato[1]
+
+    nav.paginacion
+      a.boton(href="/") ‹ Volver al listado
