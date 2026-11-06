@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Constructor de ladrillos</title>
+  <link rel="stylesheet" href="css/estilos.css">
+  <style>
+    :root {
+      --verde: #b3ff8a;
+      --azul: #1e90ff;
+      --gris: #adadad;
+    }
+
+    body {
+      margin: 0;
+      background: #fff;
+      font-family: 'IBM Plex Mono', 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    main {
+      width: 100%;
+      max-width: 420px;
+      padding: 24px 16px;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    h1 {
+      text-align: center;
+      font-weight: 400;
+      font-size: 22px;
+      letter-spacing: 1px;
+      margin: 8px 0 24px;
+    }
+
+    /* Indicador de estado */
+    #estado {
+      background: var(--verde);
+      border-radius: 999px;
+      width: 240px;
+      max-width: 100%;
+      margin: 0 auto 20px;
+      padding: 8px 16px;
+      box-sizing: border-box;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    /* Zona de trabajo: imagen de la cámara */
+    #lienzo {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: var(--gris);
+      border-radius: 40px;
+    }
+
+    /* Menú de gestos */
+    #barra {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      margin-top: 28px;
+    }
+
+    #menu {
+      position: relative;
+      width: 84px;
+      height: 80px;
+      background: var(--verde);
+      border: none;
+      border-radius: 24px;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    #icono-menu {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      width: 18px;
+      height: 16px;
+    }
+
+    #icono-mano {
+      position: absolute;
+      bottom: 10px;
+      left: 14px;
+      width: 35px;
+      height: 35px;
+    }
+
+    /* Ayuda de gestos (desplegable) */
+    #ayuda {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 260px;
+      background: var(--verde);
+      border-radius: 24px;
+      padding: 16px;
+      box-sizing: border-box;
+      grid-template-columns: 1fr 80px;
+      gap: 12px;
+      align-items: center;
+      text-align: center;
+      font-size: 14px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    #ayuda.abierta {
+      display: grid;
+    }
+
+    #ayuda img {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      object-fit: cover;
+    }
+  </style>
+</head>
+
+<body>
+  
+  <main>
+    <h1>CONSTRUCTOR<br>DE LADRILLOS</h1>
+
+    <p id="estado">Cargando...</p>
+
+    <canvas id="lienzo"></canvas>
+    <video id="video" autoplay playsinline muted style="position:absolute; width:1px; height:1px; opacity:0;"></video>
+
+    <!-- Creo el menú visual para las opciones de uso -->
+    <div id="barra">
+        <button id="menu" aria-label="Ayuda de gestos">
+          <img id="icono-menu" src="img/menu.svg" alt="Menú">
+          <img id="icono-mano" src="img/mano.svg" alt="Mano">
+        </button>
+
+      <div id="ayuda">
+        <span>Crear ladrillo</span>
+          <img src="img/crearLadrillo.svg" alt="Crear ladrillo">
+          <img src="img/moverLadrillo.svg" alt="Mover ladrillo">
+        <span>Mover ladrillo</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- <p id="estado">Cargando...</p>
+
+  <canvas id="lienzo"></canvas>
+  <video id="video" autoplay playsinline muted style="position:absolute; width:1px; height:1px; opacity:0;"></video> -->
+
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
+
+    const video = document.getElementById('video');
+    const lienzo = document.getElementById('lienzo');
+    const ctx = lienzo.getContext('2d');
+    const estado = document.getElementById('estado');
+
+    //Funcionamiento del menú desplegable
+    document.getElementById('menu').onclick = () => document.getElementById('ayuda').classList.toggle('abierta');
+
+    // Resolución baja: MediaPipe va mucho más rápido con 640x480 que con Full HD
+    video.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+    });
+    await video.play();
+
+    const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm');
+    const crearDetector = delegate => HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate, // 'GPU' es mucho más rápido; si no está disponible se usa 'CPU'
+      },
+      runningMode: 'VIDEO',
+      numHands: 1,
+    });
+
+    let detector;
+    try {
+      detector = await crearDetector('GPU');
+    } catch (error) {
+      console.warn('GPU no disponible, usando CPU', error);
+      detector = await crearDetector('CPU');
+    }
+
+    lienzo.width = video.videoWidth;
+    lienzo.height = video.videoHeight;
+
+    // ---------- Ladrillos ----------
+    const ANCHO = 150;
+    const ALTO = 60;
+    const LADO = 14; // grosor de la cara lateral (efecto 3D)
+    const COLOR_FRENTE = '#c26a66';
+    const COLOR_LADO = '#ae5a58';
+
+    const ladrillos = [];       // { x, y } (x, y = centro)
+    let seleccionado = null;    // ladrillo que se está moviendo
+    let desfase = { x: 0, y: 0 }; // distancia entre el dedo y el centro del ladrillo
+
+    // Umbrales relativos al tamaño de la mano (así funcionan lejos y cerca de la cámara)
+    const UMBRAL_CREAR = 0.4;
+    const UMBRAL_PINZA = 0.3;
+
+    // Estado anterior de los gestos (para detectar cuándo EMPIEZAN)
+    let crearAntes = false;
+    let pinzaAntes = false;
+    let bloqueo = false; // evita que al abrir la mano tras crear se agarre el ladrillo nuevo
+
+    function crearLadrillo(x, y) {
+      ladrillos.push({ x, y });
+    }
+
+    function ladrilloBajo(p) {
+      // de arriba (último dibujado) a abajo
+      for (let i = ladrillos.length - 1; i >= 0; i--) {
+        const l = ladrillos[i];
+        if (Math.abs(p.x - l.x) < ANCHO / 2 && Math.abs(p.y - l.y) < ALTO / 2) return l;
+      }
+      return null;
+    }
+
+    // Rectángulo con esquinas redondeadas (ctx.roundRect no existe en todos los móviles)
+    function rectRedondeado(x, y, w, h, r) {
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function dibujarLadrillo(l, activo) {
+      const escala = activo ? 1.15 : 1;
+      ctx.save();
+      ctx.translate(l.x, l.y);
+      ctx.scale(escala, escala);
+
+      if (activo) {
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetY = 10;
+      }
+
+      const x = -ANCHO / 2;
+      const y = -ALTO / 2;
+
+      // cara lateral (detrás, más oscura y asomando por la derecha)
+      ctx.beginPath();
+      rectRedondeado(x + LADO, y, ANCHO - LADO, ALTO, 12);
+      ctx.fillStyle = COLOR_LADO;
+      ctx.fill();
+
+      // cara frontal
+      ctx.shadowColor = 'transparent';
+      ctx.beginPath();
+      rectRedondeado(x, y, ANCHO - LADO, ALTO, 12);
+      ctx.fillStyle = COLOR_FRENTE;
+      ctx.fill();
+
+      // borde azul solo en el ladrillo que se está moviendo
+      if (activo) {
+        ctx.beginPath();
+        rectRedondeado(x, y, ANCHO, ALTO, 12);
+        ctx.strokeStyle = '#1e90ff';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // ---------- Bucle principal ----------
+    let ultimoTiempo = -1;
+    let ultimaMano;
+
+    function bucle() {
+      try {
+        fotograma();
+      } catch (error) {
+        console.error(error); // si falla un fotograma, el bucle sigue
+      }
+      requestAnimationFrame(bucle);
+    }
+
+    function fotograma() {
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, -lienzo.width, 0, lienzo.width, lienzo.height);
+      ctx.restore();
+
+      // Solo se detecta cuando la cámara entrega un fotograma nuevo (evita trabajo repetido)
+      if (video.currentTime !== ultimoTiempo) {
+        ultimoTiempo = video.currentTime;
+        ultimaMano = detector.detectForVideo(video, performance.now()).landmarks[0];
+      }
+      const mano = ultimaMano;
+      let indice = null;
+
+      if (mano) {
+        const punto = n => ({ x: (1 - mano[n].x) * lienzo.width, y: mano[n].y * lienzo.height });
+
+        indice = punto(8);
+        const pulgar = punto(4);
+        const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const tamano = dist(punto(0), punto(9)); // muñeca -> base del dedo corazón
+
+        // Gesto CREAR: las 4 puntas (índice, corazón, anular, meñique) cerca del pulgar
+        const crear = [8, 12, 16, 20].every(n => dist(punto(n), pulgar) < tamano * UMBRAL_CREAR);
+
+        // Gesto MOVER: pinza pulgar-índice (si no es el gesto de crear)
+        let pinza = !crear && dist(indice, pulgar) < tamano * UMBRAL_PINZA;
+
+        if (crear) bloqueo = true;
+        else if (!pinza) bloqueo = false;
+        if (bloqueo) pinza = false;
+
+        // CREAR: solo en el instante en que empieza el gesto
+        if (crear && !crearAntes) crearLadrillo(pulgar.x, pulgar.y);
+
+        // MOVER: al empezar la pinza se intenta agarrar; al terminar se suelta
+        if (pinza && !pinzaAntes) {
+          seleccionado = ladrilloBajo(indice);
+          if (seleccionado) {
+            desfase = { x: seleccionado.x - indice.x, y: seleccionado.y - indice.y };
+            // lo pasamos al final para dibujarlo encima
+            ladrillos.splice(ladrillos.indexOf(seleccionado), 1);
+            ladrillos.push(seleccionado);
+          }
+        }
+        if (!pinza) seleccionado = null;
+        if (seleccionado) {
+          seleccionado.x = indice.x + desfase.x;
+          seleccionado.y = indice.y + desfase.y;
+        }
+
+        crearAntes = crear;
+        pinzaAntes = pinza;
+
+        if (crear) estado.textContent = 'Creando ladrillo';
+        else if (seleccionado) estado.textContent = 'Moviendo ladrillo';
+        else if (pinza) estado.textContent = 'Pinza: no hay ladrillo';
+        else estado.textContent = 'Apuntando';
+      } else {
+        seleccionado = null;
+        crearAntes = false;
+        pinzaAntes = false;
+        bloqueo = false;
+        estado.textContent = 'Enseña una mano';
+      }
+
+      // Dibujar ladrillos
+      for (const l of ladrillos) dibujarLadrillo(l, l === seleccionado);
+
+      // Punto en el índice (como en la plantilla)
+      if (indice) {
+        ctx.fillStyle = seleccionado ? 'red' : 'lime';
+        ctx.beginPath();
+        ctx.arc(indice.x, indice.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+    }
+
+    bucle();
+  </script>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+
+</html>

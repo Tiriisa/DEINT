@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Very Simple ManoUI</title>
+  <style>
+    body { margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center; }
+    canvas { max-width: 100%; }
+    #estado { font-size: 2rem; }
+    .zona { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 24px; padding: 0 16px; }
+    figure { margin: 0; }
+    figcaption { font-size: 0.9rem; line-height: 1.6; text-align: left; }  </style>
+</head>
+<body>
+  <p id="estado">Cargando...</p>
+
+  <div class="zona">
+    <canvas id="lienzo" width="640" height="480"></canvas>
+
+    <figure>
+      <canvas id="esquema" width="300" height="400"></canvas>
+      <figcaption>
+        <span style="color:#fff">●</span> 0: muñeca<br>
+        <span style="color:#ff6b6b">●</span> 1–4: pulgar (4 = punta)<br>
+        <span style="color:#ffd93d">●</span> 5–8: índice (8 = punta)<br>
+        <span style="color:#6bcb77">●</span> 9–12: corazón<br>
+        <span style="color:#4d96ff">●</span> 13–16: anular<br>
+        <span style="color:#c77dff">●</span> 17–20: meñique
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- No usar "hidden": en iOS un vídeo oculto no genera fotogramas -->
+  <video id="video" autoplay playsinline muted style="position:absolute; width:1px; height:1px; opacity:0;"></video>
+
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
+
+    // =====================================================================
+    // ==  CONFIGURACIÓN: ESTOS VALORES SE PUEDEN MODIFICAR               ==
+    // =====================================================================
+    //
+    //  Los números son los 21 puntos del esquema de la derecha:
+    //    0 = muñeca · 4 = punta pulgar · 8 = punta índice · 12 = punta corazón
+    //    16 = punta anular · 20 = punta meñique
+
+    const NUM_MANOS = 1;            // MODIFICABLE: manos detectadas a la vez (1 o 2)
+
+    const PUNTO_A = 4;              // MODIFICABLE: primer punto del gesto (punta del pulgar)
+    const PUNTO_B = 8;              // MODIFICABLE: segundo punto del gesto (punta del índice)
+    const UMBRAL_PINZA = 40;        // MODIFICABLE: distancia en píxeles para considerar que se tocan
+
+    const PUNTOS_A_DIBUJAR = [8];   // MODIFICABLE: puntos que se pintan sobre la cámara
+    const RADIO = 15;               // MODIFICABLE: tamaño de los círculos
+    const COLOR_NORMAL = 'lime';    // MODIFICABLE: color cuando no hay gesto
+    const COLOR_GESTO = 'red';      // MODIFICABLE: color cuando hay gesto
+
+    const TEXTO_GESTO = '¡PINZA!';                        // MODIFICABLE
+    const TEXTO_NORMAL = 'Apuntando';                     // MODIFICABLE
+    const TEXTO_SIN_MANO = 'Enseña una mano a la cámara'; // MODIFICABLE
+
+    // =====================================================================
+    // ==  FIN CONFIGURACIÓN                                              ==
+    // =====================================================================
+
+    const video = document.getElementById('video');
+    const lienzo = document.getElementById('lienzo');
+    const ctx = lienzo.getContext('2d');
+    const estado = document.getElementById('estado');
+
+    // ===== INICIO ILUSTRACIÓN: esquema de los 21 puntos (no forma parte del reconocimiento) =====
+    const esquema = document.getElementById('esquema').getContext('2d');
+
+    const puntos = [
+      [150, 370],
+      [105, 335], [75, 295], [55, 255], [40, 215],
+      [115, 235], [108, 175], [104, 135], [100, 95],
+      [150, 228], [150, 160], [150, 115], [150, 70],
+      [185, 236], [192, 175], [196, 135], [200, 100],
+      [215, 255], [230, 210], [240, 180], [248, 150]
+    ];
+
+    const dedos = [
+      { color: '#ff6b6b', camino: [0, 1, 2, 3, 4] }, //Pulgar
+      { color: '#ffd93d', camino: [0, 5, 6, 7, 8] }, //indice
+      { color: '#6bcb77', camino: [9, 10, 11, 12] }, //Corazon
+      { color: '#4d96ff', camino: [13, 14, 15, 16] }, //Anular
+      { color: '#c77dff', camino: [0, 17, 18, 19, 20] }, //Meñique
+      { color: '#ffffff', camino: [5, 9, 13, 17] }, //Palma
+    ];
+
+    esquema.lineWidth = 4;
+
+    for (const dedo of dedos) {
+      esquema.strokeStyle = dedo.color;
+      esquema.beginPath();
+      for (const n of dedo.camino) {
+        esquema.lineTo(puntos[n][0], puntos[n][1]);
+      }
+      esquema.stroke();
+    }
+
+    esquema.font = 'bold 12px sans-serif';
+    esquema.textAlign = 'center';
+    esquema.textBaseline = 'middle';
+
+    puntos.forEach(([x, y], numero) => {
+      const destacado = numero === 4 || numero === 8;
+
+      esquema.fillStyle = destacado ? 'lime' : '#222';
+      esquema.beginPath();
+      esquema.arc(x, y, 11, 0, Math.PI * 2);
+      esquema.fill();
+      esquema.strokeStyle = 'white';
+      esquema.lineWidth = 2;
+      esquema.stroke();
+
+      esquema.fillStyle = destacado ? 'black' : 'white';
+      esquema.fillText(numero, x, y);
+    });
+
+    esquema.fillStyle = '#aaa';
+    esquema.font = '11px sans-serif';
+    esquema.fillText('Mano derecha, palma hacia la cámara (en espejo)', 150, 392);
+    // ===== FIN ILUSTRACIÓN =====
+
+    if (!navigator.mediaDevices) {
+      throw new Error('La cámara solo funciona con HTTPS o localhost');
+    }
+
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+    await video.play();
+
+    const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm');
+    const detector = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
+      runningMode: 'VIDEO',
+      numHands: NUM_MANOS,
+    });
+
+    function bucle() {
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, -lienzo.width, 0, lienzo.width, lienzo.height);
+      ctx.restore();
+
+      const resultado = detector.detectForVideo(video, performance.now());
+      const mano = resultado.landmarks[0];
+
+      if (mano) {
+        // Convierte el punto número n (0–20) a píxeles del lienzo (en espejo)
+        const punto = n => ({ x: (1 - mano[n].x) * lienzo.width, y: mano[n].y * lienzo.height });
+
+        const a = punto(PUNTO_A);
+        const b = punto(PUNTO_B);
+
+        // ===== MODIFICABLE: CONDICIÓN DEL GESTO =====
+        const distancia = Math.hypot(a.x - b.x, a.y - b.y);
+        const gesto = distancia < UMBRAL_PINZA;
+        // ===== FIN CONDICIÓN DEL GESTO =====
+
+        // ===== MODIFICABLE: DIBUJO SOBRE LA CÁMARA =====
+        ctx.fillStyle = gesto ? COLOR_GESTO : COLOR_NORMAL;
+        for (const n of PUNTOS_A_DIBUJAR) {
+          const p = punto(n);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, RADIO, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // ===== FIN DIBUJO =====
+
+        // ===== MODIFICABLE: ACCIÓN CUANDO HAY GESTO =====
+        estado.textContent = gesto ? TEXTO_GESTO : TEXTO_NORMAL;
+        // ===== FIN ACCIÓN =====
+      } else {
+        estado.textContent = TEXTO_SIN_MANO;
+      }
+
+      requestAnimationFrame(bucle);
+    }
+
+    if (video.readyState < 2) {
+      await new Promise(listo => video.addEventListener('loadeddata', listo, { once: true }));
+    }
+
+    // En el móvil la cámara suele venir en vertical: el lienzo copia su tamaño real
+    lienzo.width = video.videoWidth;
+    lienzo.height = video.videoHeight;
+
+    bucle();
+  </script>
+
+  <script>
+    const mostrarError = err => document.getElementById('estado').textContent = 'Error: ' + (err?.message || err);
+    window.addEventListener('error', e => mostrarError(e.error || e.message));
+    window.addEventListener('unhandledrejection', e => mostrarError(e.reason));
+  </script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mínima</title>
+  <style>
+    #paleta { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+    .color {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 3px solid transparent; cursor: pointer; padding: 0;
+    }
+    .color.activo { border-color: #000; outline: 2px solid #fff; }
+    #selector { width: 40px; height: 36px; padding: 0; border: none; cursor: pointer; }
+    #estado { font-family: sans-serif; }
+    #estado.error { color: red; font-weight: bold; }
+  </style>
+</head>
+
+<body>
+  <p id="estado">Iniciando...</p>
+
+  <div id="paleta">
+    <button class="color activo" data-color="#ff0000" style="background:#ff0000"></button>
+    <button class="color" data-color="#0066ff" style="background:#0066ff"></button>
+    <button class="color" data-color="#00cc44" style="background:#00cc44"></button>
+    <button class="color" data-color="#ffdd00" style="background:#ffdd00"></button>
+    <button class="color" data-color="#ffffff" style="background:#ffffff"></button>
+    <button class="color" data-color="#000000" style="background:#000000"></button>
+    <input type="color" id="selector" value="#ff0000" title="Color personalizado">
+    <button id="borrar">Borrar</button>
+  </div>
+
+  <canvas id="lienzo" width="640" height="480"></canvas>
+  <video id="video" autoplay playsinline muted style="position:absolute; width:1px; height:1px; opacity:0;"></video>
+
+  <script type="module">
+    import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1';
+
+    const video = document.getElementById('video');
+    const lienzo = document.getElementById('lienzo');
+    const ctx = lienzo.getContext('2d');
+    const estado = document.getElementById('estado');
+
+    const mensaje = (t, error = false) => {
+      estado.textContent = t;
+      estado.classList.toggle('error', error);
+    };
+
+    // ---- Estado del dibujo y UI (se activa ANTES de cargar nada pesado) ----
+    let color = '#ff0000';
+    let pintando = false;
+    let ultimo = null;
+
+    const capa = document.createElement('canvas');
+    capa.width = lienzo.width;
+    capa.height = lienzo.height;
+    const cctx = capa.getContext('2d');
+    cctx.lineWidth = 6;
+    cctx.lineCap = 'round';
+    cctx.lineJoin = 'round';
+
+    const botones = document.querySelectorAll('.color');
+    const selector = document.getElementById('selector');
+
+    botones.forEach(b => b.addEventListener('click', () => {
+      botones.forEach(x => x.classList.remove('activo'));
+      b.classList.add('activo');
+      color = b.dataset.color;
+      selector.value = color;
+    }));
+
+    selector.addEventListener('input', () => {
+      botones.forEach(x => x.classList.remove('activo'));
+      color = selector.value;
+    });
+
+    document.getElementById('borrar').addEventListener('click', () => {
+      cctx.clearRect(0, 0, capa.width, capa.height);
+    });
+
+    // ---- Carga con mensajes de progreso ----
+    let detector;
+    try {
+      mensaje('1/3 Pidiendo cámara (acepta el permiso)...');
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+      await video.play();
+
+      lienzo.width = video.videoWidth || 640;
+      lienzo.height = video.videoHeight || 480;
+      capa.width = lienzo.width;
+      capa.height = lienzo.height;
+      cctx.lineWidth = 6;
+      cctx.lineCap = 'round';
+      cctx.lineJoin = 'round';
+
+      mensaje('2/3 Cargando MediaPipe...');
+      const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm');
+
+      mensaje('3/3 Cargando modelo de manos...');
+      detector = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task' },
+        runningMode: 'VIDEO',
+        numHands: 1,
+      });
+    } catch (e) {
+      mensaje('ERROR al iniciar: ' + e.name + ' - ' + e.message, true);
+      throw e;
+    }
+
+    // ---- Bucle ----
+    function bucle() {
+      try {
+        // Vídeo en espejo + dibujo encima
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, -lienzo.width, 0, lienzo.width, lienzo.height);
+        ctx.restore();
+        ctx.drawImage(capa, 0, 0);
+
+        const resultado = detector.detectForVideo(video, performance.now());
+        const mano = resultado.landmarks[0];
+
+        if (mano) {
+          const punto = n => ({ x: (1 - mano[n].x) * lienzo.width, y: mano[n].y * lienzo.height });
+          const indice = punto(8);
+          const pulgar = punto(4);
+          const muneca = punto(0);
+          const baseCorazon = punto(9);
+
+          const tamanoMano = Math.hypot(muneca.x - baseCorazon.x, muneca.y - baseCorazon.y);
+          const ratio = Math.hypot(indice.x - pulgar.x, indice.y - pulgar.y) / tamanoMano;
+
+          // Pinza: empieza al juntar, para al separar
+          if (!pintando && ratio < 0.35) pintando = true;
+          else if (pintando && ratio > 0.50) pintando = false;
+
+          const p = { x: (indice.x + pulgar.x) / 2, y: (indice.y + pulgar.y) / 2 };
+
+          if (pintando) {
+            cctx.strokeStyle = color;
+            cctx.fillStyle = color;
+            if (ultimo) {
+              cctx.beginPath();
+              cctx.moveTo(ultimo.x, ultimo.y);
+              cctx.lineTo(p.x, p.y);
+              cctx.stroke();
+            } else {
+              cctx.beginPath();
+              cctx.arc(p.x, p.y, cctx.lineWidth / 2, 0, Math.PI * 2);
+              cctx.fill();
+            }
+            ultimo = p;
+          } else {
+            ultimo = null;
+          }
+
+          // Puntas de índice y pulgar (para ver qué detecta)
+          ctx.fillStyle = 'cyan';
+          [indice, pulgar].forEach(d => {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+          });
+
+          // Cursor
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, pintando ? 8 : 14, 0, Math.PI * 2);
+          if (pintando) {
+            ctx.fillStyle = color;
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          mensaje((pintando ? 'PINTANDO' : 'Apuntando') + ' | ratio ' + ratio.toFixed(2) + ' (pinza < 0.35)');
+        } else {
+          pintando = false;
+          ultimo = null;
+          mensaje('Enseña una mano');
+        }
+      } catch (e) {
+        mensaje('ERROR en el bucle: ' + e.message, true);
+        console.error(e);
+        return; // paramos para no spamear el error
+      }
+
+      requestAnimationFrame(bucle);
+    }
+
+    bucle();
+  </script>
+</body>
+
+</html>
